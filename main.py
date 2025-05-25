@@ -1,6 +1,12 @@
 from AnalisadorSintatico import AnalisadorSintatico
 
-tokens =  ["ID", "=", "NUM_INT", ";"]
+tokens = [
+    "switch", "(", "ID", ")", "{",
+    "default", ":", "{",
+    "return", ";",
+    "}",
+    "}"
+]
 
 AS = AnalisadorSintatico(tokens)
 

@@ -31,9 +31,9 @@ class AnalisadorSintatico:
     # arrays (11) id [expressao]
     def analisar_declaracao(self):
         print(f"Token atual: {self.token_atual}")
-        if self.token_atual in {'int', 'float', 'double', 'char', 'boolean'}:
+        if self.token_atual == 'void' or self.token_atual in {'int', 'float', 'double', 'char', 'boolean'}:
             tipo = self.token_atual
-            print(f"Tipo detectado: {tipo}")
+            print(f"Tipo detectado: {tipo}")    
             self.consumir_token(tipo)
             print(f"Token depois consumir tipo: {self.token_atual}")
             if self.token_atual == 'ID':
@@ -67,13 +67,19 @@ class AnalisadorSintatico:
             self.consumir_token('*/')
         elif self.token_atual in {'if', 'while', 'for', 'switch', 'break', 'continue', 'return'}:
             self.estrutura_controle()
-        elif self.token_atual == 'ID':
+        elif self.token_atual in {'ID'}:
             self.atribuicao()
             if self.token_atual != ';':
-                raise SyntaxError("Esperado ';' após expressão")
+                raise SyntaxError("Esperado ';' apos expressao")
+            self.consumir_token(';')
+        elif self.token_atual in {'NUM_INT', 'NUM_DEC', 'TEXTO', '('}:
+            self.expressao()
+            if self.token_atual != ';':
+                raise SyntaxError("Esperado ';' apos expressao")
             self.consumir_token(';')
         else:
             raise SyntaxError("A declaracao esta invalida")
+
         
     # declaracao variavel (3)
     def declaracao_variavel(self):
@@ -99,23 +105,42 @@ class AnalisadorSintatico:
 
     # parametro (5) - parametro .. parametro, parametro
     def parametros(self):
-        self.parametro()
-        while self.token_atual == ',':
-            self.consumir_token(',')
-            self.parametro()
+        self.parametros_formais()
+
+        if self.token_atual == '{':
+            self.bloco()
+        elif self.token_atual == ';':
+            self.consumir_token(';')
+        else:
+            raise SyntaxError(f"Esperado 'abre chaves' ou ';', encontrado {self.token_atual}")
+
 
     # parametro (5) - tipo id..
     def parametro(self):
-        if self.token_atual in {'int', 'float', 'double', 'char', 'boolean'}:
-            self.consumir_token(self.token_atual)
-            if self.token_atual == '...':
+        if self.token_atual in {'int', 'float', 'double', 'char', 'boolean', 'void'}:
+            tipo = self.token_atual
+            self.consumir_token(tipo)
+
+            if self.token_atual == '...':  
                 self.consumir_token('...')
+            
             self.consumir_token('ID')
+
             if self.token_atual == '[':
                 self.consumir_token('[')
                 self.consumir_token(']')
         else:
-            raise SyntaxError("O parametro esta invalido")
+            raise SyntaxError("Tipo de parâmetro inválido")
+
+    # parametro (5) - tipo id..
+    def parametros_formais(self):
+        self.consumir_token('(')
+        if self.token_atual != ')':
+            self.parametro()
+            while self.token_atual == ',':
+                self.consumir_token(',')
+                self.parametro()
+        self.consumir_token(')')
 
     # bloco (6)
     def bloco(self):
@@ -127,26 +152,30 @@ class AnalisadorSintatico:
     # expressao (8)
     def expressao(self):
         print(f"Token atual: {self.token_atual}")
-        self.atribuicao()
-        print(f"Token depois de atribuicao: {self.token_atual}")
+        if self.token_atual == 'ID':
+            prox_token = self.tokens[self.indice + 1] if self.indice + 1 < len(self.tokens) else None
+            if prox_token in {'=', '+=', '-=', '*=', '/=', '%=', '&&=', '||='}:
+                self.atribuicao()
+            else:
+                self.expressao_logica()
+        else:
+            self.expressao_logica()
+        print(f"Token depois de expressao: {self.token_atual}")
+
 
     # expressao (8) - atribuicoes
     def atribuicao(self):
         if self.token_atual == 'ID':
             self.consumir_token('ID')
-            
-            while self.token_atual == '[':
-                self.consumir_token('[')
-                self.expressao()
-                self.consumir_token(']')
-            
+
             if self.token_atual in {'=', '+=', '-=', '*=', '/=', '%=', '&&=', '||='}:
                 self.consumir_token(self.token_atual)
                 self.expressao()
             else:
-                self.possivel_expressao_relacional_ou_nada()
+                self.expressao_postfix(prefixo='ID')
         else:
             self.expressao_logica()
+
 
     # expressao (8) - atribuicoes - funcao pra ajudar atribuicoes
     def possivel_expressao_relacional_ou_nada(self):
@@ -186,7 +215,9 @@ class AnalisadorSintatico:
             self.consumir_token('(')
             self.expressao()
             self.consumir_token(')')
+            self.consumir_token('{')
             self.case_lista()
+            self.consumir_token('}')        
         elif self.token_atual == 'break':
             self.consumir_token('break')
             self.consumir_token(';')
@@ -195,7 +226,8 @@ class AnalisadorSintatico:
             self.consumir_token(';')
         elif self.token_atual == 'return':
             self.consumir_token('return')
-            self.expressao()
+            if self.token_atual != ';':
+                self.expressao()
             self.consumir_token(';')
 
     # estruturas de controle (9) case lista
@@ -273,17 +305,18 @@ class AnalisadorSintatico:
         self.expressao_postfix()
 
     # expressoes (12) postfix
-    def expressao_postfix(self):
-        self.primaria()
-        while self.token_atual and self.token_atual in {'[', '(', '.', '->'}:
+    def expressao_postfix(self, prefixo=None):
+        if prefixo is None:
+            self.primaria()
+
+        while self.token_atual in {'[', '(', '.', '->'}:
             if self.token_atual == '[':
                 self.consumir_token('[')
                 self.expressao()
                 self.consumir_token(']')
             elif self.token_atual == '(':
                 self.consumir_token('(')
-                if self.token_atual != ')':
-                    self.argumentos()
+                self.argumentos()
                 self.consumir_token(')')
             elif self.token_atual == '.':
                 self.consumir_token('.')
@@ -294,10 +327,13 @@ class AnalisadorSintatico:
 
     # expressoes (12) argumentos
     def argumentos(self):
+        if self.token_atual == ')':
+            return
         self.expressao()
-        while self.token_atual and self.token_atual == ',':
+        while self.token_atual == ',':
             self.consumir_token(',')
             self.expressao()
+
 
     # expressoes (12) primaria
     def primaria(self):
